@@ -9,6 +9,7 @@ void print_parameters(int *scaling_factor, long *mat_size, block *mat_prob, long
 	printf("scaling_factor: %d\n", *scaling_factor);
 	printf("matrix_size: %ld\n", *mat_size);
 	printf("Probabity matrix (a: %0.3f, b: %0.3f, c: %0.3f, d: %0.3f)\n", mat_prob->a, mat_prob->b, mat_prob->c, mat_prob->d);
+	printf("Total edges: %ld\n", mat_prob->edges);
 	printf("nodes_per_pe: %ld\n", *nodes_per_pe);
 	printf("mat_blocks: %d\n", *mat_blocks);
 }
@@ -24,8 +25,11 @@ int main(int argc, char **argv)
 	set_parameters(argc, argv, &scaling_factor, &edge_factor, &mat_prob, &mat_size);
 	nodes_per_pe = mat_size/npes;
 	mat_blocks = mat_size/nodes_per_pe;
-	printf("rank: %d\tnpes: %d\n", rank, npes);
 	if(!rank)print_parameters(&scaling_factor, &mat_size, &mat_prob, &nodes_per_pe, &mat_blocks);
+	//Edges distribution using given probabilty
+	edges_dist = calculate_edge_distribution(rank, npes, &mat_prob);
+	pe_edges = calculate_edges(edges_dist, npes);
+	printf("rank: %d\tnpes: %d, edges: %ld\n", rank, npes, pe_edges);
 	MPI_Finalize();
 	return EXIT_SUCCESS;
 }
@@ -88,5 +92,5 @@ void set_parameters(int argc, char **argv, int *scaling_factor, int *edge_factor
 		print_help('h');
 	}
 	*mat_size = (long)1<<(*scaling_factor);
-	mat_prob->nnz = (*mat_size)*(*edge_factor);
+	mat_prob->edges = (*mat_size)*(*edge_factor);
 }
