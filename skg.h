@@ -82,3 +82,50 @@ long calculate_edges(long *edges_dist, int n)
 		edges += edges_dist[i];
 	return edges;
 }
+void stochastic_Kronecker_grpah(edge *edge_list, long pe_edges, long dim, long start_idx, float *prob, float *c_prob, int *node_edge_count)
+{
+	int rank;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	srand(start_idx+rank);
+	long mat_dim, row, col, edge_count=0;
+	int p_idx, prow, pcol, i, k;
+	float p;
+	k = log2(dim);
+	for(edge_count=0;edge_count<pe_edges;edge_count++)
+	{
+		mat_dim = dim;
+		row=0;
+		col=0;
+		for(i=0;i<k;i++)
+		{
+			p = (float)rand()/RAND_MAX;
+			p_idx = p<c_prob[0]?0:(p<c_prob[1]?1:(p<c_prob[2]?2:3));
+			prow = p_idx/2;
+			pcol = p_idx%2;
+			mat_dim/=2;
+			row = row + mat_dim*prow;
+			col = col + mat_dim*pcol;
+		}
+		edge_list[edge_count].v = row;
+		edge_list[edge_count].u = start_idx+col;
+		edge_list[edge_count].w = p;
+		node_edge_count[row]++;
+	}
+}
+edge* create_edge_list(long *edges_dist, long pe_edges, long nodes_per_pe, int npes, block *mat_prob)
+{
+	edge *edge_list = (edge*)malloc((size_t)pe_edges*sizeof(edge));
+	int i, *node_edge_count = (int*)calloc(nodes_per_pe, sizeof(int));
+	long block_edges, start_idx, idx = 0;
+	float prob[] = {mat_prob->a, mat_prob->b, mat_prob->c, mat_prob->d}, c_prob[4];
+	c_prob[0] = prob[0];
+	for(i=1;i<4;i++) c_prob[i] = prob[i] + c_prob[i-1];
+	for(i=0;i<npes;i++)
+	{
+		block_edges = edges_dist[npes-1-i];
+		start_idx = nodes_per_pe*(npes-1-i);
+		stochastic_Kronecker_grpah(&edge_list[idx], block_edges, nodes_per_pe, start_idx, prob, c_prob, node_edge_count);
+		idx += block_edges;
+	}
+	return edge_list;
+}

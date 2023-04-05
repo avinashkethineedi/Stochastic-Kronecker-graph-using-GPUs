@@ -18,6 +18,7 @@ int main(int argc, char **argv)
 	MPI_Init(&argc, &argv);
 	int scaling_factor = 15, edge_factor = 20, rank, npes, mat_blocks;
 	long mat_size, nodes_per_pe, pe_edges, edges=0, *edges_dist;
+	edge* edge_list;
 	time_stats graph_time = {0, 0, 0, 0};
 	block mat_prob = {0.25, 0.25, 0.25, 0.25, 1};
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -29,6 +30,7 @@ int main(int argc, char **argv)
 	//Edges distribution using given probabilty
 	edges_dist = calculate_edge_distribution(rank, npes, &mat_prob);
 	pe_edges = calculate_edges(edges_dist, npes);
+	edge_list = create_edge_list(edges_dist, pe_edges, nodes_per_pe, npes, &mat_prob);
 	printf("rank: %d\tnpes: %d, edges: %ld\n", rank, npes, pe_edges);
 	MPI_Finalize();
 	return EXIT_SUCCESS;
