@@ -9,16 +9,16 @@ typedef struct block_probablity
 typedef struct EDGE
 {
 	//edge from v to u with weight w
-	int v;
+	long v;
 	long u;
 	float w;
 }edge;
 typedef struct CSR_MATRIX
 {
-	int *row_ptr;
+	long *row_ptr;
 	long *col_ptr;
 	float *val_ptr;
-	long nnz, rows;
+	long edges, nodes;
 }csr_data;
 typedef struct TIME
 {
@@ -112,10 +112,11 @@ void stochastic_Kronecker_grpah(edge *edge_list, long pe_edges, long dim, long s
 		node_edge_count[row]++;
 	}
 }
-edge* create_edge_list(long *edges_dist, long pe_edges, long nodes_per_pe, int npes, block *mat_prob)
+edge* create_edge_list(long *edges_dist, long pe_edges, long nodes_per_pe, int npes, block *mat_prob, int **node_edge_count)
 {
 	edge *edge_list = (edge*)malloc((size_t)pe_edges*sizeof(edge));
-	int i, *node_edge_count = (int*)calloc(nodes_per_pe, sizeof(int));
+	int i;
+	*node_edge_count = (int*)calloc(nodes_per_pe, sizeof(int));
 	long block_edges, start_idx, idx = 0;
 	float prob[] = {mat_prob->a, mat_prob->b, mat_prob->c, mat_prob->d}, c_prob[4];
 	c_prob[0] = prob[0];
@@ -124,8 +125,46 @@ edge* create_edge_list(long *edges_dist, long pe_edges, long nodes_per_pe, int n
 	{
 		block_edges = edges_dist[npes-1-i];
 		start_idx = nodes_per_pe*(npes-1-i);
-		stochastic_Kronecker_grpah(&edge_list[idx], block_edges, nodes_per_pe, start_idx, prob, c_prob, node_edge_count);
+		stochastic_Kronecker_grpah(&edge_list[idx], block_edges, nodes_per_pe, start_idx, prob, c_prob, *node_edge_count);
 		idx += block_edges;
 	}
 	return edge_list;
+}
+csr_data* create_csr_data(edge *edge_list, int *node_edge_count, long pe_edges, long nodes_per_pe)
+{
+	size_t n = (size_t)sizeof(csr_data)+(nodes_per_pe+1)*sizeof(long) + pe_edges*(sizeof(long) + sizeof(float));
+	csr_data *csr_mat = (csr_data*)malloc(n);
+	csr_mat->edges = pe_edges;
+	csr_mat->nodes = nodes_per_pe;
+	long i, idx;
+	if(csr_mat == NULL)
+	{
+		printf("csr memory allocation failed (%ld B)\n", n);
+		MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+	}
+	//printf("edges: %ld\tnodes: %ld\n", csr_mat->edges, csr_mat->nodes);
+	n = sizeof(csr_data);
+	csr_mat->row_ptr = (long*)((char*)csr_mat + n);
+	n+=((nodes_per_pe+1)*sizeof(long));
+	csr_mat->col_ptr = (long*)((char*)csr_mat + n);
+	n+=(pe_edges*sizeof(long));
+	csr_mat->val_ptr = (float*)((char*)csr_mat + n);
+	//row_ptr
+	csr_mat->row_ptr[0] = 0;
+	for(i=1;i<=nodes_per_pe;i++)
+		csr_mat->row_ptr[i] = csr_mat->row_ptr[i-1] + node_edge_count[i-1];
+	for(i=0;i<pe_edges;i++)
+	{
+		idx = edge_list[i].v;
+		node_edge_count[idx]--;
+		idx = csr_mat->row_ptr[idx] + node_edge_count[idx];
+		csr_mat->col_ptr[idx] = edge_list[i].u;
+		csr_mat->val_ptr[idx] = edge_list[i].w;
+	}
+	for(i=0;i<nodes_per_pe;i++)
+		std::sort(&csr_mat->col_ptr[csr_mat->row_ptr[i]], &csr_mat->col_ptr[csr_mat->row_ptr[i+1]]);
+
+	free(node_edge_count);
+	free(edge_list);
+	return csr_mat;
 }
