@@ -168,3 +168,40 @@ csr_data* create_csr_data(edge *edge_list, int *node_edge_count, long pe_edges, 
 	free(edge_list);
 	return csr_mat;
 }
+//for validation
+void print_csr(csr_data* csr_mat)
+{
+	printf("nodes: %ld, edges: %ld\n", csr_mat->nodes, csr_mat->edges);
+	for(int i=0;i<csr_mat->nodes;i++)
+	{
+		printf("%d(%d) -> ", i, csr_mat->row_ptr[i+1]-csr_mat->row_ptr[i]);
+		for(int j=csr_mat->row_ptr[i];j<csr_mat->row_ptr[i+1];j++)
+			printf("(%ld, %0.2f) ", csr_mat->col_ptr[j], csr_mat->val_ptr[j]);
+		printf("\n");
+	}
+}
+void file_write(const char* file_name, MPI_Datatype datatype, MPI_Offset offset, void* buffer, int num_elems, int rank)
+{
+	MPI_File handle;
+	MPI_Status status;
+	int access_mode = MPI_MODE_CREATE | MPI_MODE_RDWR;
+	if(MPI_File_open(MPI_COMM_WORLD, file_name, access_mode, MPI_INFO_NULL, &handle) != MPI_SUCCESS)
+	{
+		printf("[MPI process %d] Failure in opening the file %s.\n", rank, file_name);
+		MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+	}
+	MPI_File_seek(handle, offset, MPI_SEEK_SET);
+	MPI_File_write(handle, buffer, num_elems, datatype, &status);//MPI_STATUS_IGNORE);
+	int count;
+	MPI_Get_count(&status, datatype, &count);
+	if(count != num_elems)
+	{
+		printf("[MPI process %d] Number of elements written (%d) != num_elems (%d)\n", rank, count, num_elems);
+		MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+	}
+	if(MPI_File_close(&handle) != MPI_SUCCESS)
+	{
+		printf("[MPI process %d] Failure in closing the file %s.\n", rank, file_name);
+		MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+	}
+}

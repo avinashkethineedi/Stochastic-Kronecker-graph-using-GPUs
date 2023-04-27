@@ -4,12 +4,12 @@
 #include"skg.h"
 void print_help(char);
 void set_parameters(int, char**, int*, int*, block*, long*);
-void print_parameters(int *scaling_factor, long *mat_size, block *mat_prob, long *nodes_per_pe, int *mat_blocks)
+void print_parameters(int *scaling_factor, long *mat_size, block *mat_prob, long *nodes_per_pe, int *mat_blocks, int edge_factor)
 {
 	printf("scaling_factor: %d\n", *scaling_factor);
 	printf("matrix_size: %ld\n", *mat_size);
 	printf("Probabity matrix (a: %0.3f, b: %0.3f, c: %0.3f, d: %0.3f)\n", mat_prob->a, mat_prob->b, mat_prob->c, mat_prob->d);
-	printf("Total edges: %ld\n", mat_prob->edges);
+	printf("Total edges: %ld (edge_factor: %d)\n", mat_prob->edges, edge_factor);
 	printf("nodes_per_pe: %ld\n", *nodes_per_pe);
 	printf("mat_blocks: %d\n", *mat_blocks);
 }
@@ -17,7 +17,7 @@ int main(int argc, char **argv)
 {
 	MPI_Init(&argc, &argv);
 	int scaling_factor = 15, edge_factor = 20, rank, npes, mat_blocks, *node_edge_count;
-	long mat_size, nodes_per_pe, pe_edges, edges=0, *edges_dist;
+	long mat_size, nodes_per_pe, pe_edges, edges=0, *edges_dist, offset;
 	edge* edge_list;
 	csr_data *csr_mat;
 	time_stats graph_time = {0, 0, 0, 0};
@@ -27,13 +27,22 @@ int main(int argc, char **argv)
 	set_parameters(argc, argv, &scaling_factor, &edge_factor, &mat_prob, &mat_size);
 	nodes_per_pe = mat_size/npes;
 	mat_blocks = mat_size/nodes_per_pe;
-	if(!rank)print_parameters(&scaling_factor, &mat_size, &mat_prob, &nodes_per_pe, &mat_blocks);
+	if(!rank)print_parameters(&scaling_factor, &mat_size, &mat_prob, &nodes_per_pe, &mat_blocks, edge_factor);
 	//Edges distribution using given probabilty
 	edges_dist = calculate_edge_distribution(rank, npes, &mat_prob);
 	pe_edges = calculate_edges(edges_dist, npes);
 	edge_list = create_edge_list(edges_dist, pe_edges, nodes_per_pe, npes, &mat_prob, &node_edge_count);
 	csr_mat = create_csr_data(edge_list, node_edge_count, pe_edges, nodes_per_pe);
+	MPI_Barrier(MPI_COMM_WORLD);
+	//File write
+	offset = (nodes_per_pe+1)*rank*sizeof(MPI_LONG);
+	for(int i=0;i<=csr_mat->nodes;i++) csr_mat->row_ptr[i]+=offset; //update row_ptr
+	file_write("row_ptr.bin", MPI_LONG, offset, csr_mat->row_ptr, nodes_per_pe+1, rank); //row_ptr file
+	MPI_Exscan(&csr_mat->edges, &offset, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+	file_write("col_ptr.bin", MPI_LONG, !rank?0:offset*sizeof(MPI_LONG), csr_mat->col_ptr, csr_mat->edges, rank); //col_ptr file
+	file_write("val_ptr.bin", MPI_FLOAT, !rank?0:offset*sizeof(float), csr_mat->val_ptr, csr_mat->edges, rank); //val_ptr file
 	printf("rank: %d\tnpes: %d, edges: %ld\n", rank, npes, pe_edges);
+	MPI_Barrier(MPI_COMM_WORLD);
 	free(csr_mat);
 	MPI_Finalize();
 	return EXIT_SUCCESS;
