@@ -35,12 +35,14 @@ int main(int argc, char **argv)
 	csr_mat = create_csr_data(edge_list, node_edge_count, pe_edges, nodes_per_pe);
 	MPI_Barrier(MPI_COMM_WORLD);
 	//File write
-	offset = (nodes_per_pe+1)*rank*sizeof(MPI_LONG);
-	for(int i=0;i<=csr_mat->nodes;i++) csr_mat->row_ptr[i]+=offset; //update row_ptr
-	file_write("row_ptr.bin", MPI_LONG, offset, csr_mat->row_ptr, nodes_per_pe+1, rank); //row_ptr file
 	MPI_Exscan(&csr_mat->edges, &offset, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
-	file_write("col_ptr.bin", MPI_LONG, !rank?0:offset*sizeof(MPI_LONG), csr_mat->col_ptr, csr_mat->edges, rank); //col_ptr file
-	file_write("val_ptr.bin", MPI_FLOAT, !rank?0:offset*sizeof(float), csr_mat->val_ptr, csr_mat->edges, rank); //val_ptr file
+	if(!rank) offset=0;
+	for(int i=0;i<=csr_mat->nodes;i++) csr_mat->row_ptr[i]+=offset; //update row_ptr
+	offset = (nodes_per_pe+1)*rank*sizeof(long);
+	file_write("row_ptr.bin", MPI_LONG, offset, csr_mat->row_ptr, nodes_per_pe+1, rank); //row_ptr file
+	offset = csr_mat->row_ptr[0];
+	file_write("col_ptr.bin", MPI_LONG, offset*sizeof(long), csr_mat->col_ptr, csr_mat->edges, rank); //col_ptr file
+	file_write("val_ptr.bin", MPI_FLOAT, offset*sizeof(float), csr_mat->val_ptr, csr_mat->edges, rank); //val_ptr file
 	printf("rank: %d\tnpes: %d, edges: %ld\n", rank, npes, pe_edges);
 	MPI_Barrier(MPI_COMM_WORLD);
 	free(csr_mat);
